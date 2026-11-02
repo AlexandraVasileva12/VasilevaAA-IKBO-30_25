@@ -191,28 +191,35 @@ def show_image(mermaid_text):
     webbrowser.open("file://" + os.path.abspath(HTML_FILE))
 
 
-parser = argparse.ArgumentParser(description="Граф зависимостей")
+def build_parser():
+    """Создать парсер параметров командной строки."""
+    parser = argparse.ArgumentParser(description="Граф зависимостей")
+    parser.add_argument("--package", required=True,
+                        help="имя анализируемого пакета")
+    parser.add_argument("--repo", required=True,
+                        help="URL репозитория или путь к тестовому файлу")
+    parser.add_argument("--test-mode", action="store_true",
+                        help="режим работы с тестовым репозиторием")
+    parser.add_argument("--max-depth", type=int, default=3,
+                        help="максимальная глубина анализа")
+    parser.add_argument("--filter", default="",
+                        help="подстрока для фильтрации пакетов")
+    return parser
 
-parser.add_argument("--package", required=True,
-                    help="имя анализируемого пакета")
-parser.add_argument("--repo", required=True,
-                    help="URL репозитория или путь к тестовому файлу")
-parser.add_argument("--test-mode", action="store_true",
-                    help="режим работы с тестовым репозиторием")
-parser.add_argument("--max-depth", type=int, default=3,
-                    help="максимальная глубина анализа")
-parser.add_argument("--filter", default="",
-                    help="подстрока для фильтрации пакетов")
 
-args = parser.parse_args()
+def main():
+    """Запустить программу."""
+    args = build_parser().parse_args()
+    check_package(args.package, args.test_mode)
+    check_repo(args.repo, args.test_mode)
+    check_depth(args.max_depth)
+    check_filter(args.filter)
+    graph = {}
+    dfs(args.package, args, graph, 0, [])
+    mermaid_text = to_mermaid(graph)
+    print(mermaid_text)
+    show_image(mermaid_text)
 
-check_package(args.package, args.test_mode)
-check_repo(args.repo, args.test_mode)
-check_depth(args.max_depth)
-check_filter(args.filter)
 
-graph = {}
-dfs(args.package, args, graph, 0, [])
-mermaid_text = to_mermaid(graph)
-print(mermaid_text)
-show_image(mermaid_text)
+if __name__ == "__main__":
+    main()

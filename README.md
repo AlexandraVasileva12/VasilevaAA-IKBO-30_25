@@ -368,10 +368,15 @@ org.apache.commons:commons-text:jar:1.11.0
 `<optional>` и `<exclusions>`. Это упрощения: по заданию нельзя
 использовать готовые средства получения зависимостей.
 
-## Запуск
+## Сборка, запуск и тесты
+
+Нужен Python 3.8 или новее. Сторонние библиотеки не используются, поэтому
+сборка и установка зависимостей не требуются.
+
+Запуск:
 
 ```
-run.bat --package org.slf4j:slf4j-api:2.0.9 --repo https://repo1.maven.org/maven2 --max-depth 2 --filter test
+run.bat --package com.squareup.okhttp3:okhttp:4.12.0 --repo https://repo1.maven.org/maven2 --max-depth 3
 ```
 
 или
@@ -379,6 +384,25 @@ run.bat --package org.slf4j:slf4j-api:2.0.9 --repo https://repo1.maven.org/maven
 ```
 python src\main.py --package A --repo tests\test_repo.txt --test-mode
 ```
+
+Запуск тестов (модуль `unittest`, файл `tests/test_main.py`):
+
+```
+python -m unittest discover -s tests -v
+```
+
+Тесты проверяют сборку адреса POM-файла, чтение зависимостей из POM,
+построение графа (общая зависимость, глубина, фильтр, цикл), вывод
+Mermaid и обработку ошибок всех параметров.
+
+## Структура проекта
+
+| Путь | Назначение |
+|---|---|
+| `src/main.py` | исходный код программы |
+| `tests/test_main.py` | автоматические тесты |
+| `tests/*.txt` | тестовые репозитории |
+| `run.bat` | скрипт запуска |
 
 ## Примеры ошибок
 
