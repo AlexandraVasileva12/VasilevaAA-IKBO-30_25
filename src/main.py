@@ -4,9 +4,13 @@ import argparse
 import os
 import string
 import sys
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
 
 MIN_DEPTH = 1
 MAX_DEPTH = 100
+MAVEN_PARTS = 3
 
 
 def error(message):
@@ -24,7 +28,7 @@ def check_package(package, test_mode):
             if letter not in string.ascii_uppercase:
                 error("в тестовом режиме имя пакета - большие "
                       "латинские буквы, например A")
-    elif ":" not in package:
+    elif len(package.split(":")) != MAVEN_PARTS:
         error("имя пакета Maven пишется так: группа:название:версия")
 
 
@@ -49,6 +53,52 @@ def check_filter(text):
         error("фильтр не может состоять только из пробелов")
 
 
+def get_pom_url(repo, package):
+    """Собрать адрес POM-файла пакета Maven."""
+    group, artifact, version = package.split(":")
+    group_path = group.replace(".", "/")
+    return (f"{repo.rstrip('/')}/{group_path}/{artifact}/"
+            f"{version}/{artifact}-{version}.pom")
+
+
+def download_pom(url):
+    """Скачать POM-файл и вернуть его текст."""
+    try:
+        with urllib.request.urlopen(url) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.URLError as problem:
+        error(f"не удалось скачать {url} ({problem})")
+
+
+def get_dependencies(pom_text):
+    """Достать из POM-файла список прямых зависимостей."""
+    pom_text = pom_text.replace(
+        'xmlns="http://maven.apache.org/POM/4.0.0"', "")
+    try:
+        root = ET.fromstring(pom_text)
+    except ET.ParseError:
+        error("POM-файл повреждён, не удалось его прочитать")
+    result = []
+    for dep in root.findall("dependencies/dependency"):
+        if dep.findtext("scope") == "test":
+            continue
+        group = dep.findtext("groupId")
+        artifact = dep.findtext("artifactId")
+        version = dep.findtext("version", "?")
+        result.append(f"{group}:{artifact}:{version}")
+    return result
+
+
+def print_dependencies(package, dependencies):
+    """Вывести прямые зависимости пакета по одной на строке."""
+    if not dependencies:
+        print(f"У пакета {package} нет прямых зависимостей")
+        return
+    print(f"Прямые зависимости пакета {package}:")
+    for dependency in dependencies:
+        print("  " + dependency)
+
+
 parser = argparse.ArgumentParser(description="Граф зависимостей")
 
 parser.add_argument("--package", required=True,
@@ -69,5 +119,6 @@ check_repo(args.repo, args.test_mode)
 check_depth(args.max_depth)
 check_filter(args.filter)
 
-for key, value in vars(args).items():
-    print(f"{key} = {value}")
+if not args.test_mode:
+    pom_text = download_pom(get_pom_url(args.repo, args.package))
+    print_dependencies(args.package, get_dependencies(pom_text))
