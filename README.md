@@ -13,6 +13,7 @@
 | `--test-mode` | режим работы с тестовым репозиторием (флаг) |
 | `--max-depth` | максимальная глубина анализа, от 1 до 100 (по умолчанию 3) |
 | `--filter` | подстрока для фильтрации пакетов (по умолчанию пусто) |
+| `--reverse` | вывести обратные зависимости (этап 4, только с `--test-mode`) |
 
 На этапе 1 программа выводила все параметры в формате `ключ = значение`.
 При неверных параметрах выводится сообщение об ошибке.
@@ -120,6 +121,50 @@ python src\main.py --package A --repo tests\bad.txt --test-mode
 Ошибка: неверная строка в тестовом файле: B C
 
 python src\main.py --package com.squareup.okhttp3:okhttp:4.12.0 --repo https://repo1.maven.org/maven2 --max-depth 3
+```
+
+## Этап 4. Обратные зависимости
+
+Опция `--reverse` выводит обратные зависимости пакета — все пакеты,
+которые зависят от него (напрямую или через другие пакеты).
+
+Используется тот же алгоритм DFS, что и на этапе 3. Отличие только в
+функции `load_dependencies`: в режиме `--reverse` она возвращает не
+зависимости пакета, а пакеты, которые от него зависят (`find_parents`).
+Поэтому глубина, фильтр и обработка циклов работают так же.
+
+Режим работает только вместе с `--test-mode`: в POM-файле Maven указано,
+от чего зависит пакет, но не указано, кто зависит от него.
+
+### Примеры
+
+```
+python src\main.py --package D --repo tests\test_repo.txt --test-mode --reverse
+От пакета D зависят: B, C, A
+
+python src\main.py --package A --repo tests\test_repo.txt --test-mode --reverse
+От пакета A никто не зависит
+
+python src\main.py --package E --repo tests\deep.txt --test-mode --reverse --max-depth 10
+От пакета E зависят: D, C, B, A
+
+python src\main.py --package E --repo tests\deep.txt --test-mode --reverse --max-depth 2
+От пакета E зависят: D, C
+
+python src\main.py --package A --repo tests\cycle.txt --test-mode --reverse
+Найден цикл: A -> C -> B -> A
+От пакета A зависят: C, B
+
+python src\main.py --package H --repo tests\big.txt --test-mode --reverse --max-depth 10
+Найден цикл: H -> E -> B -> A -> G -> D -> A
+От пакета H зависят: E, B, C, A, G, D
+
+python src\main.py --package H --repo tests\big.txt --test-mode --reverse --max-depth 10 --filter B
+Найден цикл: H -> E -> C -> A -> G -> D -> A
+От пакета H зависят: E, C, A, G, D
+
+python src\main.py --package a:b:c --repo http://x --reverse
+Ошибка: обратные зависимости работают только с --test-mode
 ```
 
 ## Запуск

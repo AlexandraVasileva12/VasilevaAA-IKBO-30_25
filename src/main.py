@@ -47,6 +47,12 @@ def check_depth(depth):
         error(f"глубина должна быть от {MIN_DEPTH} до {MAX_DEPTH}")
 
 
+def check_reverse(reverse, test_mode):
+    """Проверить, что обратные зависимости ищутся в тестовом режиме."""
+    if reverse and not test_mode:
+        error("обратные зависимости работают только с --test-mode")
+
+
 def check_filter(text):
     """Проверить подстроку для фильтрации."""
     if text != "" and text.strip() == "":
@@ -105,10 +111,22 @@ def read_test_repo(path):
     return graph
 
 
+def find_parents(package, repo):
+    """Найти пакеты, которые напрямую зависят от данного."""
+    parents = []
+    for name, dependencies in repo.items():
+        if package in dependencies:
+            parents.append(name)
+    return parents
+
+
 def load_dependencies(package, args):
-    """Получить прямые зависимости пакета."""
+    """Получить прямые зависимости пакета (или обратные)."""
     if args.test_mode:
-        return read_test_repo(args.repo).get(package, [])
+        repo = read_test_repo(args.repo)
+        if args.reverse:
+            return find_parents(package, repo)
+        return repo.get(package, [])
     if "?" in package or "$" in package:
         return []
     pom_text = download_pom(get_pom_url(args.repo, package))
@@ -144,6 +162,19 @@ def dfs(package, args, graph, depth, path):
     path.pop()
 
 
+def print_reverse(package, graph):
+    """Вывести все пакеты, которые зависят от данного."""
+    found = []
+    for parents in graph.values():
+        for parent in parents:
+            if parent != package and parent not in found:
+                found.append(parent)
+    if found:
+        print(f"От пакета {package} зависят:", ", ".join(found))
+    else:
+        print(f"От пакета {package} никто не зависит")
+
+
 def print_graph(graph):
     """Вывести граф: пакет и его зависимости."""
     for package, dependencies in graph.items():
@@ -165,6 +196,8 @@ parser.add_argument("--max-depth", type=int, default=3,
                     help="максимальная глубина анализа")
 parser.add_argument("--filter", default="",
                     help="подстрока для фильтрации пакетов")
+parser.add_argument("--reverse", action="store_true",
+                    help="показать обратные зависимости пакета")
 
 args = parser.parse_args()
 
@@ -172,7 +205,11 @@ check_package(args.package, args.test_mode)
 check_repo(args.repo, args.test_mode)
 check_depth(args.max_depth)
 check_filter(args.filter)
+check_reverse(args.reverse, args.test_mode)
 
 graph = {}
 dfs(args.package, args, graph, 0, [])
-print_graph(graph)
+if args.reverse:
+    print_reverse(args.package, graph)
+else:
+    print_graph(graph)
