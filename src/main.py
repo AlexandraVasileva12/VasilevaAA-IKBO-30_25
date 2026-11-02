@@ -2,15 +2,33 @@
 
 import argparse
 import os
+import re
 import string
 import sys
 import urllib.error
 import urllib.request
+import webbrowser
 import xml.etree.ElementTree as ET
 
 MIN_DEPTH = 1
 MAX_DEPTH = 100
 MAVEN_PARTS = 3
+HTML_FILE = "graph.html"
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Граф зависимостей</title></head>
+<body>
+<pre class="mermaid">
+{graph}
+</pre>
+<script type="module">
+import mermaid from
+  "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+mermaid.initialize({{ startOnLoad: true }});
+</script>
+</body>
+</html>
+"""
 
 
 def error(message):
@@ -45,12 +63,6 @@ def check_depth(depth):
     """Проверить максимальную глубину."""
     if depth < MIN_DEPTH or depth > MAX_DEPTH:
         error(f"глубина должна быть от {MIN_DEPTH} до {MAX_DEPTH}")
-
-
-def check_reverse(reverse, test_mode):
-    """Проверить, что обратные зависимости ищутся в тестовом режиме."""
-    if reverse and not test_mode:
-        error("обратные зависимости работают только с --test-mode")
 
 
 def check_filter(text):
@@ -111,22 +123,10 @@ def read_test_repo(path):
     return graph
 
 
-def find_parents(package, repo):
-    """Найти пакеты, которые напрямую зависят от данного."""
-    parents = []
-    for name, dependencies in repo.items():
-        if package in dependencies:
-            parents.append(name)
-    return parents
-
-
 def load_dependencies(package, args):
-    """Получить прямые зависимости пакета (или обратные)."""
+    """Получить прямые зависимости пакета."""
     if args.test_mode:
-        repo = read_test_repo(args.repo)
-        if args.reverse:
-            return find_parents(package, repo)
-        return repo.get(package, [])
+        return read_test_repo(args.repo).get(package, [])
     if "?" in package or "$" in package:
         return []
     pom_text = download_pom(get_pom_url(args.repo, package))
@@ -162,26 +162,33 @@ def dfs(package, args, graph, depth, path):
     path.pop()
 
 
-def print_reverse(package, graph):
-    """Вывести все пакеты, которые зависят от данного."""
-    found = []
-    for parents in graph.values():
-        for parent in parents:
-            if parent != package and parent not in found:
-                found.append(parent)
-    if found:
-        print(f"От пакета {package} зависят:", ", ".join(found))
-    else:
-        print(f"От пакета {package} никто не зависит")
+def node_id(package):
+    """Сделать имя узла для Mermaid: только буквы, цифры и _."""
+    return re.sub(r"\W", "_", package)
 
 
-def print_graph(graph):
-    """Вывести граф: пакет и его зависимости."""
+def to_mermaid(graph):
+    """Построить текст графа на языке Mermaid."""
+    nodes = []
     for package, dependencies in graph.items():
-        if dependencies:
-            print(package, "->", ", ".join(dependencies))
-        else:
-            print(package, "-> нет зависимостей")
+        for name in [package] + dependencies:
+            if name not in nodes:
+                nodes.append(name)
+    lines = ["graph TD"]
+    for name in nodes:
+        lines.append(f'    {node_id(name)}["{name}"]')
+    for package, dependencies in graph.items():
+        for dependency in dependencies:
+            lines.append(f"    {node_id(package)} --> {node_id(dependency)}")
+    return "\n".join(lines)
+
+
+def show_image(mermaid_text):
+    """Сохранить граф в HTML-файл и открыть его в браузере."""
+    with open(HTML_FILE, "w", encoding="utf-8") as file:
+        file.write(HTML_TEMPLATE.format(graph=mermaid_text))
+    print("Изображение графа сохранено в", HTML_FILE)
+    webbrowser.open("file://" + os.path.abspath(HTML_FILE))
 
 
 parser = argparse.ArgumentParser(description="Граф зависимостей")
@@ -196,8 +203,6 @@ parser.add_argument("--max-depth", type=int, default=3,
                     help="максимальная глубина анализа")
 parser.add_argument("--filter", default="",
                     help="подстрока для фильтрации пакетов")
-parser.add_argument("--reverse", action="store_true",
-                    help="показать обратные зависимости пакета")
 
 args = parser.parse_args()
 
@@ -205,11 +210,9 @@ check_package(args.package, args.test_mode)
 check_repo(args.repo, args.test_mode)
 check_depth(args.max_depth)
 check_filter(args.filter)
-check_reverse(args.reverse, args.test_mode)
 
 graph = {}
 dfs(args.package, args, graph, 0, [])
-if args.reverse:
-    print_reverse(args.package, graph)
-else:
-    print_graph(graph)
+mermaid_text = to_mermaid(graph)
+print(mermaid_text)
+show_image(mermaid_text)
