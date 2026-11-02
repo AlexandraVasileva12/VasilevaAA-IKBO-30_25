@@ -67,7 +67,8 @@ def download_pom(url):
         with urllib.request.urlopen(url) as response:
             return response.read().decode("utf-8")
     except urllib.error.URLError as problem:
-        error(f"не удалось скачать {url} ({problem})")
+        print(f"Предупреждение: не удалось скачать {url} ({problem})")
+        return None
 
 
 def get_dependencies(pom_text):
@@ -89,14 +90,67 @@ def get_dependencies(pom_text):
     return result
 
 
-def print_dependencies(package, dependencies):
-    """Вывести прямые зависимости пакета по одной на строке."""
-    if not dependencies:
-        print(f"У пакета {package} нет прямых зависимостей")
-        return
-    print(f"Прямые зависимости пакета {package}:")
+def read_test_repo(path):
+    """Прочитать тестовый репозиторий: строки вида 'A: B C'."""
+    graph = {}
+    with open(path, encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if line == "":
+                continue
+            if ":" not in line:
+                error(f"неверная строка в тестовом файле: {line}")
+            name, dependencies = line.split(":", 1)
+            graph[name.strip()] = dependencies.split()
+    return graph
+
+
+def load_dependencies(package, args):
+    """Получить прямые зависимости пакета."""
+    if args.test_mode:
+        return read_test_repo(args.repo).get(package, [])
+    if "?" in package or "$" in package:
+        return []
+    pom_text = download_pom(get_pom_url(args.repo, package))
+    if pom_text is None:
+        return []
+    return get_dependencies(pom_text)
+
+
+def apply_filter(dependencies, filter_text):
+    """Убрать пакеты, имя которых содержит подстроку фильтра."""
+    if filter_text == "":
+        return dependencies
+    result = []
     for dependency in dependencies:
-        print("  " + dependency)
+        if filter_text not in dependency:
+            result.append(dependency)
+    return result
+
+
+def dfs(package, args, graph, depth, path):
+    """Обойти зависимости пакета в глубину (DFS) с рекурсией."""
+    if package in path:
+        print("Найден цикл:", " -> ".join(path + [package]))
+        return
+    if package in graph or depth >= args.max_depth:
+        return
+    dependencies = load_dependencies(package, args)
+    dependencies = apply_filter(dependencies, args.filter)
+    graph[package] = dependencies
+    path.append(package)
+    for dependency in dependencies:
+        dfs(dependency, args, graph, depth + 1, path)
+    path.pop()
+
+
+def print_graph(graph):
+    """Вывести граф: пакет и его зависимости."""
+    for package, dependencies in graph.items():
+        if dependencies:
+            print(package, "->", ", ".join(dependencies))
+        else:
+            print(package, "-> нет зависимостей")
 
 
 parser = argparse.ArgumentParser(description="Граф зависимостей")
@@ -119,6 +173,6 @@ check_repo(args.repo, args.test_mode)
 check_depth(args.max_depth)
 check_filter(args.filter)
 
-if not args.test_mode:
-    pom_text = download_pom(get_pom_url(args.repo, args.package))
-    print_dependencies(args.package, get_dependencies(pom_text))
+graph = {}
+dfs(args.package, args, graph, 0, [])
+print_graph(graph)
